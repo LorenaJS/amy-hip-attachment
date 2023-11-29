@@ -2,7 +2,7 @@
 
 Code to reproduce the analyses presented in: "Infant attachment does not depend on neonatal amygdala and hippocampal structure and connectivity".
 
-Repository authors: Lorena Jiménez Sánchez Vaher (lorena.jimenezs@ed.ac.uk).
+Repository authors: Lorena Jiménez Sánchez (lorena.jimenezs@ed.ac.uk).
 
 The repository consists of the following folders:
 
