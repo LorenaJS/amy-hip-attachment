@@ -1,3 +1,11 @@
-# MRI Attachment
+# Neonatal MRI and infant attachment
 
-Project to investigate associations between amygdalae and hippocampi structure and structural connectivity at term-equivalent age and attachment behaviours at nine months of age.
+Code to reproduce the analyses presented in: "Infant attachment does not depend on neonatal amygdala and hippocampal structure and connectivity".
+
+Repository authors: Lorena Jiménez Sánchez Vaher (lorena.jimenezs@ed.ac.uk).
+
+The repository consists of the following folders:
+
+scripts/ containing R markdown and script files for creating the master dataframe, demographic and clinical variable tables, and statistical analyses.
+
+results/ containing output model results, figures and html reports.
