@@ -1,5 +1,7 @@
+.git
 .Rproj.user
-.Rhistory
+%
 .RData
-.Ruserdata
-raw_data/
+.Rhistory
+/raw_data
+/results

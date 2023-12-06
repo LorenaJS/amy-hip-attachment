@@ -1,0 +1,105 @@
+---
+title: "MRI Attachment - Demographics"
+author: "LJS"
+date: "2023-02-28"
+output: html_document
+---
+
+# Libraries 
+
+```{r setup, include=FALSE}
+library("rlang") #toolbox
+library("dplyr") #data manipulation
+library("here") #toolbox
+library("tidyverse") #data manipulation
+library("ggpubr") #plotting
+library("tidytext") #data manipulation
+library("OpenMx") #residualise metrics
+library("umx") #residualise metrics
+library("knitr") #rmarkdown
+library("htmltools") #rmarkdown
+library("markdown") #rmarkdown
+library("httpuv") #rmarkdown
+library("vtable") #summary tables
+library("gtsummary") #summary tables
+library("NCmisc") #toolbox
+library("stringr") #data manipulation
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) #do not print warning messages
+```
+
+# Neonatal MRI and infant attachment
+
+## Section I: Prepare dataframe with data and transform potential covariates
+
+Start from spreadsheet with raw times from coding scheme (Williams and Turner, 2020). 
+IDs are already filtered in this spreadhseet, based on MRI + attachment criteria. 
+Merge attachment, MRI and covariates data in a dataframe.
+
+### Create spreadsheet
+
+```{r}
+Attachment <- read.csv(here("raw_data", "IDs_WT_rawtimes_filtered.csv"), header=T, dec=".",sep=",")
+MRI_structural <- read.csv(here("raw_data", "IDs_MRI_structural.csv"), header=T, dec=".",sep=",")
+MRI_DTI <- read.csv(here("raw_data", "IDs_MRI_DTI_gmNODDI.csv"), header=T, dec=".",sep=",")
+Covariates <- read.csv(here("raw_data", "IDs_covariates.csv"), header=T, dec=".",sep=",")
+Data <- merge(Attachment, MRI_DTI, by="ID")
+Data <- merge(Data, MRI_structural, by="ID")
+Data <- merge(Data, Covariates, by="ID")
+rownames(Data)<-Data$ID
+Data$ID <- NULL
+```
+
+### Transform potential covariates to categorical nominal (factors without order) or categorical ordinal (factors with order) accordingly.
+
+```{r}
+Data$sex = as.factor(Data$sex)
+Data$Maternal_smoking = as.factor(Data$Maternal_smoking)
+Data$Maternal_alcohol = as.factor(Data$Maternal_alcohol)
+Data$Maternal_education = factor(Data$Maternal_education, order = TRUE, levels =c("1", "2", "3", "4", "5", "6", "7"))
+Data$Maternal_antenatal_anxiety = as.factor(Data$Maternal_antenatal_anxiety)
+Data$Maternal_antenatal_depression = as.factor(Data$Maternal_antenatal_depression)
+```
+
+## Demographics
+
+Check normality of continuous variables to know how to report them (both Shapiro tests and histograms are used to double-check visually).
+
+```{r}
+targetdata=Data[,grep('GA_birth|BW|SIMD|age_scan|Maternal_age', colnames(Data))]
+apply(targetdata,2,shapiro.test)
+
+for (cols in colnames(targetdata)) {
+  targetdata %>% pull(cols) %>% hist(main = cols)
+}
+```
+
+According to above: SIMD, BW, and GA at birth seem non-normally distributed.
+
+Display tables of descriptive statistics: report medians (range) for GA at birth, BW, SIMD and means (SD) for age at scan, according to above.
+
+```{r}
+Data_baseline <- Data[,c(26:36)]
+table_dem <- tbl_summary(
+  Data_baseline,
+  by = NULL,
+  label = NULL,
+  statistic = list(c("GA_birth", "BW", "SIMD", "Maternal_education") ~ c("{median} ({min}, {max})"),
+                   c("age_scan", "Maternal_age") ~ c("{mean} ({sd})"), all_categorical() ~ "{n}"),
+  digits = all_continuous()~3,
+  type = NULL,
+  value = NULL,
+  missing = NULL,
+  missing_text = NULL,
+  sort = NULL,
+  percent = NULL,
+  include = everything()
+)
+
+table_dem
+```
+
+
+```{r}
+markdownToHTML("MRI_Attachment_dem.Rmd",output ="MRI_Attachment_dem.html")
+```
+

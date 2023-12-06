@@ -1,0 +1,426 @@
+---
+title: "MRI Attachment - Covariate analyses for Amy/Hip structural connectivity and attachment behaviours"
+author: "LJS"
+date: "2023-02-28"
+output: html_document
+---
+
+# Libraries 
+
+```{r setup, include=FALSE}
+library("rlang") #toolbox
+library("dplyr") #data manipulation
+library("ggplot2") #plotting
+library("scales") #plotting
+library("here") #toolbox
+library("tidyverse") #data manipulation
+library("ggpubr") #plotting
+library("tidytext") #data manipulation
+library("OpenMx") #residualise metrics
+library("umx") #residualise metrics
+library("knitr") #rmarkdown
+library("htmltools") #rmarkdown
+library("markdown") #rmarkdown
+library("httpuv") #rmarkdown
+library("vtable") #summary tables
+library("gtsummary") #summary tables
+library("NCmisc") #toolbox
+library("Hmisc") #statistical tests
+library("stringr") #data manipulation
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) #do not print warning messages
+```
+
+# Neonatal MRI and infant attachment
+
+## Section I: Prepare dataframe with data and transform potential covariates
+
+Start from spreadsheet with raw times from coding scheme (Williams and Turner, 2020). 
+IDs are already filtered in this spreadhseet, based on MRI + attachment criteria. 
+Merge attachment, MRI and covariates data in a dataframe.
+
+### Create spreadsheet for all analyses
+
+```{r}
+Attachment <- read.csv(here("raw_data", "IDs_WT_rawtimes_filtered.csv"), header=T, dec=".",sep=",")
+MRI_DTI <- read.csv(here("raw_data", "IDs_MRI_structural_connectivity.csv"), header=T, dec=".",sep=",")
+Covariates <- read.csv(here("raw_data", "IDs_covariates.csv"), header=T, dec=".",sep=",")
+Data <- merge(Attachment, MRI_DTI, by="ID")
+Data <- merge(Data, Covariates, by="ID")
+rownames(Data)<-Data$ID
+Data$ID <- NULL
+```
+
+Avoid scientific notation.
+
+```{r}
+options(scipen = 999)
+```
+
+### Transform potential covariates to categorical nominal (factors without order) or categorical ordinal (factors with order) accordingly.
+
+```{r}
+Data$sex = as.factor(Data$sex)
+Data$Maternal_smoking = as.factor(Data$Maternal_smoking)
+Data$Maternal_alcohol = as.factor(Data$Maternal_alcohol)
+Data$Maternal_education = factor(Data$Maternal_education, order = TRUE, levels =c("1", "2", "3", "4", "5", "6", "7"))
+Data$Maternal_antenatal_anxiety = as.factor(Data$Maternal_antenatal_anxiety)
+Data$Maternal_antenatal_depression = as.factor(Data$Maternal_antenatal_depression)
+```
+
+## Get residualised metrics
+
+Residualise brain against age at scan (these keep their original name for simplicity).
+
+```{r}
+Data$Ethnicity <- NULL
+Data[,c(1:19)] <- scale(Data[,c(1:19)])
+
+Data <- umx_residualize(c("FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_l", "ODI_amy_r"), cov = c("age_scan"), data = Data)
+```
+
+
+## Covariate analyses
+
+### Categorical variables
+
+Categorical variables: Sex, maternal smoking, maternal alcohol, maternal antenatal depression, maternal antenatal anxiety.
+Check normality of continuous variables (MRI and behavioural variables).
+
+Shapiro tests.
+
+```{r}
+targetdata=Data[,grep('HD_Raw|FNF_Raw|AA_Raw|FA_|MD_|NDI_|ODI_', colnames(Data))]
+targetdata=as.data.frame(targetdata)
+apply(targetdata,2,shapiro.test)
+```
+
+According to above: all behavioural variables and all MRI variables seem non-normally distributed.
+Use histograms to double-check distribution of these variables visually.
+
+```{r}
+targetdata=Data[,grep("_Raw|FA_|MD_|NDI_|ODI_", colnames(Data))]
+targetdata=as.data.frame(targetdata)
+for (cols in colnames(targetdata)) {
+  targetdata %>% pull(cols) %>% hist(main = cols)
+}
+```
+
+In case of doubt, normal QQ plots can be used to check distribution of variables visually.
+
+```{r}
+for (cols in colnames(targetdata)) {
+  targetdata %>% pull(cols) %>% qqnorm(main = cols)
+}
+```
+
+According to above: FNF_Raw, FA_hip_l, FA_hip_r, FA_amy_l, FA_amy_r, MD_hip_l, MD_hip_r, MD_amy_l, MD_amy_r, NDI_hip_l, and ODI_amy_l seem non-normally distributed.
+Display tables of descriptive statistics and tests by confounder.
+
+```{r}
+Pval_fun <- function(x) style_pvalue(x, digits = 3)
+Stat_fun <- function(x) style_sigfig(x, digits=3)
+```
+
+Associations between sex and MRI/behavioural variables.
+
+```{r}
+targetdata <- Data[,c(1:20)]
+
+table_cov <- targetdata %>% tbl_summary(by = sex,
+  label = NULL,
+  statistic = list(c("FNF_Raw", "FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "ODI_amy_l") ~ c("{median} ({min}, {max})"), 
+                   c("HD_Raw", "AA_Raw", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_r") ~ c("{mean} ({sd})"), all_categorical() ~ "{n} ({p}%)"),
+  digits = everything()~3) %>% 
+  add_p(
+  test = list(c("FNF_Raw", "FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "ODI_amy_l") ~ "wilcox.test",
+                   c("HD_Raw", "AA_Raw", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_r") ~ "t.test", all_categorical() ~ "fisher.test"),
+  pvalue_fun = Pval_fun) %>% 
+  separate_p_footnotes() %>% 
+  modify_header(
+    list(
+      statistic ~ "**t-statistic**",
+      p.value ~ "**p-value**"
+    )
+  ) %>%
+  modify_fmt_fun(
+    list(
+      statistic ~ Stat_fun,
+      p.value ~ Pval_fun
+    ))
+
+table_cov
+table_cov <- as_tibble(table_cov)
+colnames(table_cov) <- c("Characteristic", "M", "F", "t-statistic", "p-value")
+
+write.csv(table_cov, here("results/covariates", "WM.Cov.sex.table.csv"), row.names=FALSE)
+```
+
+Associations between maternal smoking and MRI/behavioural variables.
+
+```{r}
+targetdata <- Data[,c(1:19,28)]
+
+table_cov <- targetdata %>% tbl_summary(by = Maternal_smoking,
+  label = NULL,
+  statistic = list(c("FNF_Raw", "FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "ODI_amy_l") ~ c("{median} ({min}, {max})"), 
+                   c("HD_Raw", "AA_Raw", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_r") ~ c("{mean} ({sd})"), all_categorical() ~ "{n} ({p}%)"),
+  digits = everything()~3) %>% 
+  add_p(
+  test = list(c("FNF_Raw", "FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "ODI_amy_l") ~ "wilcox.test",
+                   c("HD_Raw", "AA_Raw", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_r") ~ "t.test", all_categorical() ~ "fisher.test"),
+  pvalue_fun = Pval_fun) %>% 
+  separate_p_footnotes() %>% 
+  modify_header(
+    list(
+      statistic ~ "**t-statistic**",
+      p.value ~ "**p-value**"
+    )
+  ) %>%
+  modify_fmt_fun(
+    list(
+      statistic ~ Stat_fun,
+      p.value ~ Pval_fun
+    ))
+
+table_cov
+table_cov <- as_tibble(table_cov)
+colnames(table_cov) <- c("Characteristic", "None", "Any", "t-statistic", "p-value")
+write.csv(table_cov, here("results/covariates", "WM.Cov.smo.table.csv"), row.names = FALSE)
+```
+
+Associations between maternal alcohol and MRI/behavioural variables.
+
+```{r}
+targetdata <- Data[,c(1:19,29)]
+
+table_cov <- targetdata %>% tbl_summary(by = Maternal_alcohol,
+  label = NULL,
+  statistic = list(c("FNF_Raw", "FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "ODI_amy_l") ~ c("{median} ({min}, {max})"), 
+                   c("HD_Raw", "AA_Raw", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_r") ~ c("{mean} ({sd})"), all_categorical() ~ "{n} ({p}%)"),
+  digits = everything()~3) %>% 
+  add_p(
+  test = list(c("FNF_Raw", "FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "ODI_amy_l") ~ "wilcox.test",
+                   c("HD_Raw", "AA_Raw", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_r") ~ "t.test", all_categorical() ~ "fisher.test"),
+  pvalue_fun = Pval_fun) %>% 
+  separate_p_footnotes() %>% 
+  modify_header(
+    list(
+      statistic ~ "**t-statistic**",
+      p.value ~ "**p-value**"
+    )
+  ) %>%
+  modify_fmt_fun(
+    list(
+      statistic ~ Stat_fun,
+      p.value ~ Pval_fun
+    ))
+
+table_cov
+table_cov <- as_tibble(table_cov)
+colnames(table_cov) <- c("Characteristic", "None", "Any", "t-statistic", "p-value")
+write.csv(table_cov, here("results/covariates", "WM.Cov.alc.table.csv"), row.names = FALSE)
+
+```
+
+Associations between maternal antenatal depression and MRI/behavioural variables.
+
+```{r}
+targetdata <- Data[,c(1:19,30)]
+
+table_cov <- targetdata %>% tbl_summary(by = Maternal_antenatal_depression,
+  label = NULL,
+  statistic = list(c("FNF_Raw", "FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "ODI_amy_l") ~ c("{median} ({min}, {max})"), 
+                   c("HD_Raw", "AA_Raw", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_r") ~ c("{mean} ({sd})"), all_categorical() ~ "{n} ({p}%)"),
+  digits = everything()~3) %>% 
+  add_p(
+  test = list(c("FNF_Raw", "FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "ODI_amy_l") ~ "wilcox.test",
+                   c("HD_Raw", "AA_Raw", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_r") ~ "t.test", all_categorical() ~ "fisher.test"),
+  pvalue_fun = Pval_fun) %>% 
+  separate_p_footnotes() %>% 
+  modify_header(
+    list(
+      statistic ~ "**t-statistic**",
+      p.value ~ "**p-value**"
+    )
+  ) %>%
+  modify_fmt_fun(
+    list(
+      statistic ~ Stat_fun,
+      p.value ~ Pval_fun
+    ))
+
+table_cov
+table_cov <- as_tibble(table_cov)
+colnames(table_cov) <- c("Characteristic", "Absence", "Presence", "t-statistic", "p-value")
+write.csv(table_cov, here("results/covariates", "WM.Cov.dep.table.csv"), row.names = FALSE)
+```
+
+Associations between maternal antenatal anxiety and MRI/behavioural variables.
+
+```{r}
+targetdata <- Data[,c(1:19,31)]
+
+table_cov <- targetdata %>% tbl_summary(by = Maternal_antenatal_anxiety,
+  label = NULL,
+  statistic = list(c("FNF_Raw", "FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "ODI_amy_l") ~ c("{median} ({min}, {max})"), 
+                   c("HD_Raw", "AA_Raw", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_r") ~ c("{mean} ({sd})"), all_categorical() ~ "{n} ({p}%)"),
+  digits = everything()~3) %>% 
+  add_p(
+  test = list(c("FNF_Raw", "FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "ODI_amy_l") ~ "wilcox.test",
+                   c("HD_Raw", "AA_Raw", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_r") ~ "t.test", all_categorical() ~ "fisher.test"),
+  pvalue_fun = Pval_fun) %>% 
+  separate_p_footnotes() %>% 
+  modify_header(
+    list(
+      statistic ~ "**t-statistic**",
+      p.value ~ "**p-value**"
+    )
+  ) %>%
+  modify_fmt_fun(
+    list(
+      statistic ~ Stat_fun,
+      p.value ~ Pval_fun
+    ))
+
+table_cov
+table_cov <- as_tibble(table_cov)
+colnames(table_cov) <- c("Characteristic", "Absence", "Presence", "t-statistic", "p-value")
+write.csv(table_cov, here("results/covariates", "WM.Cov.anx.table.csv"), row.names = FALSE)
+
+```
+
+According to above, no variable met the definition of confounder and was thereby used as a covariate in further analyses.
+
+### Continuous/categorical ordinal variables 
+
+Run correlations (Spearman tests for Maternal education, GA at birth and SIMD; Spearman/Pearson tests for Maternal age, depending on the distribution of the MRI/behavioural variable).
+
+```{r, out.width="50%"}
+targetdata <- Data[,c(1:19, 22,23,26,27)]
+
+cors <- function(df) { 
+  # turn all three matrices (r, n, and P into a data frame)
+  M <- Hmisc::rcorr(as.matrix(df), type="spearman")
+  # return the three data frames in a list return(Mdf)
+  Mdf <- map(M, ~data.frame(.x))
+}
+
+newdata <- cors(targetdata)
+
+formatted_cors <- function(df){
+  cors(df) %>%
+    map(~rownames_to_column(.x, var="measure1")) %>%
+    map(~pivot_longer(.x, -measure1, names_to="measure2")) %>% 
+    bind_rows(.id = "id") %>%
+    tidyr::pivot_wider(names_from = id, values_from = value) %>%
+    mutate(sig_label = case_when(
+      P<0.05 & P>0.01 ~ "*", 
+      P<0.01 & P>0.001 ~ "**", 
+      P<0.001 ~ "***",
+      TRUE ~ " "))}
+
+data_spearman <- formatted_cors(targetdata)
+
+data_spearman = as.data.frame(data_spearman)
+
+colnames(data_spearman) = c("Y", "X", "Estimate", "N", "P_value", "sig_label")
+
+data_spearman <- data_spearman %>% filter(Y == "Maternal_education" | Y == "SIMD" |  Y == "GA_birth" )
+
+data_spearman <- data_spearman %>% filter(
+    X == "FA_hip_l" | X == "MD_hip_l" | X == "NDI_hip_l" | X == "ODI_hip_l" |  
+    X == "FA_hip_r" | X == "MD_hip_r" | X == "NDI_hip_r" | X == "ODI_hip_r" |
+    X == "FA_amy_l" | X == "MD_amy_l" | X == "NDI_amy_l" | X == "ODI_amy_l" |
+    X == "FA_amy_r" | X == "MD_amy_r" | X == "NDI_amy_r" | X == "ODI_amy_r" | 
+    X == "HD_Raw" | X == "FNF_Raw"| X == "AA_Raw" )
+
+
+targetdata=Data[,grep("FNF_Raw|FA_|MD_|NDI_hip_l|ODI_amy_l|Maternal_age", colnames(Data))]
+
+cors <- function(df) { 
+  # turn all three matrices (r, n, and P into a data frame)
+  M <- Hmisc::rcorr(as.matrix(df), type="spearman")
+  # return the three data frames in a list return(Mdf)
+  Mdf <- map(M, ~data.frame(.x))
+}
+
+formatted_cors <- function(df){
+  cors(df) %>%
+    map(~rownames_to_column(.x, var="measure1")) %>%
+    map(~pivot_longer(.x, -measure1, names_to="measure2")) %>% 
+    bind_rows(.id = "id") %>%
+    pivot_wider(names_from = id, values_from = value) %>%
+    mutate(sig_label = case_when(
+      P<0.05 & P>0.01 ~ "*", 
+      P<0.01 & P>0.001 ~ "**", 
+      P<0.001 ~ "***",
+      TRUE ~ " "))}
+
+MA_spearman <- formatted_cors(targetdata)
+
+MA_spearman = as.data.frame(MA_spearman)
+
+colnames(MA_spearman) = c("Y", "X", "Estimate", "N", "P_value", "sig_label")
+
+MA_spearman <- MA_spearman %>% filter(Y == "Maternal_age")
+
+MA_spearman <- MA_spearman %>% filter(
+    X == "FA_hip_l" | X == "MD_hip_l" | X == "NDI_hip_l" |  
+    X == "FA_hip_r" | X == "MD_hip_r" | 
+    X == "FA_amy_l" | X == "MD_amy_l" | X == "ODI_amy_l" | 
+    X == "FA_amy_r" | X == "MD_amy_r" | 
+    X == "FNF_Raw")
+
+data <- rbind(data_spearman, MA_spearman)
+
+
+targetdata <- Data[,c(1:19, 22,23,26,27)]
+targetdata=Data[,-grep("FNF_Raw|FA_|MD_|NDI_hip_l|ODI_amy_l|Maternal_age", colnames(targetdata))]
+
+cors <- function(df) { 
+  # turn all three matrices (r, n, and P into a data frame)
+  M <- Hmisc::rcorr(as.matrix(df), type="pearson")
+  # return the three data frames in a list return(Mdf)
+  Mdf <- map(M, ~data.frame(.x))
+}
+
+formatted_cors <- function(df){
+  cors(df) %>%
+    map(~rownames_to_column(.x, var="measure1")) %>%
+    map(~pivot_longer(.x, -measure1, names_to="measure2")) %>% 
+    bind_rows(.id = "id") %>%
+    pivot_wider(names_from = id, values_from = value) %>%
+    mutate(sig_label = case_when(
+      P<0.05 & P>0.01 ~ "*", 
+      P<0.01 & P>0.001 ~ "**", 
+      P<0.001 ~ "***",
+      TRUE ~ " "))}
+
+MA_pearson <- formatted_cors(targetdata)
+
+MA_pearson = as.data.frame(MA_pearson)
+
+colnames(MA_pearson) = c("Y", "X", "Estimate", "N", "P_value", "sig_label")
+
+MA_pearson <- MA_pearson %>% filter(Y == "Maternal_age")
+
+MA_pearson <- MA_pearson %>% filter(
+    X == "ODI_hip_l" |  
+    X == "NDI_hip_r" | X == "ODI_hip_r" |
+    X == "NDI_amy_l" | 
+    X == "NDI_amy_r" | X == "ODI_amy_r" | 
+    X == "HD_Raw" | X == "AA_Raw" )
+
+data <- rbind(data, MA_pearson)
+
+kable(data, col.names = gsub("[.]", " ", names(data)))
+write.csv(data, here("results/covariates", "WM.Cov.age.ed.GA.SIMD.table.csv"), row.names = FALSE)
+```
+
+According to above, no variable met the definition of confounder and was thereby used as a covariate in further analyses.
+
+```{r}
+markdownToHTML("MRI_Attachment_WM_cov.Rmd",output ="MRI_Attachment_WM_cov.html")
+```
+
+
