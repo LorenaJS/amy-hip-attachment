@@ -1,8 +1,11 @@
 # Neonatal MRI and infant attachment
 
-Code to reproduce the analyses presented in: "Infant attachment does not depend on neonatal amygdala and hippocampal structure and connectivity".
+Code for analyses presented in: 
+
+Jiménez Sanchez, L., Blesa Cabez, M., Vaher, K., Corrigan, A., Thrippleton, M. J., Bastin, M. E., Quigley, A. J., Fletcher-Watson, S., Boardman, J. P. (2023). "Infant attachment does not depend on neonatal amygdala and hippocampal structure and connectivity". medRxiv, 2023.2012.2007.23299615. https://doi.org/10.1101/2023.12.07.23299615 
 
 Repository author: Lorena Jiménez Sánchez (lorena.jimenezs@ed.ac.uk).
+
 
 # Directory structure
 
@@ -14,6 +17,7 @@ The project assumes the following file directory system:
 	- figures
 	- regression
 - scripts
+
 
 # Scripts for data analysis
 
