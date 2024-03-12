@@ -1,0 +1,330 @@
+---
+title: "MRI Attachment - Demographics"
+author: "LJS"
+date: "2023-02-28"
+output: html_document
+---
+
+# Libraries 
+
+```{r setup, include=FALSE}
+library("rlang") #toolbox
+library("dplyr") #data manipulation
+library("here") #toolbox
+library("tidyverse") #data manipulation
+library("ggpubr") #plotting
+library("tidytext") #data manipulation
+library("OpenMx") #residualise metrics
+library("umx") #residualise metrics
+library("knitr") #rmarkdown
+library("htmltools") #rmarkdown
+library("markdown") #rmarkdown
+library("httpuv") #rmarkdown
+library("vtable") #summary tables
+library("gtsummary") #summary tables
+library("NCmisc") #toolbox
+library("stringr") #data manipulation
+library("rstatix") #effect sizes
+```
+
+# Neonatal MRI and infant attachment
+
+## Section I: Prepare dataframe with data and transform potential covariates
+
+Start from spreadsheet with raw times from coding scheme (Williams and Turner, 2020). 
+IDs are already filtered in this spreadhseet, based on MRI + attachment criteria. 
+Merge attachment, MRI and covariates data in a dataframe.
+
+```{r}
+Attachment <- read.csv(here("raw_data", "IDs_WT_rawtimes_filtered.csv"), header=T, dec=".",sep=",")
+MRI_structural <- read.csv(here("raw_data", "IDs_MRI_structural.csv"), header=T, dec=".",sep=",")
+MRI_DTI <- read.csv(here("raw_data", "IDs_MRI_DTI_gmNODDI.csv"), header=T, dec=".",sep=",")
+Covariates <- read.csv(here("raw_data", "IDs_covariates.csv"), header=T, dec=".",sep=",")
+Data <- merge(Attachment, MRI_DTI, by="ID")
+Data <- merge(Data, MRI_structural, by="ID")
+Data <- merge(Data, Covariates, by="ID")
+rownames(Data)<-Data$ID
+Data$ID <- NULL
+```
+
+Avoid scientific notation.
+
+```{r}
+options(scipen = 999)
+```
+
+Transform potential covariates to categorical nominal (factors without order) or categorical ordinal (factors with order) accordingly.
+
+```{r}
+Data$sex = as.factor(Data$sex)
+Data$Ethnicity = as.factor(Data$Ethnicity)
+Data$Maternal_smoking = as.factor(Data$Maternal_smoking)
+Data$Maternal_alcohol = as.factor(Data$Maternal_alcohol)
+Data$Maternal_education = factor(Data$Maternal_education, order = TRUE, levels =c("1", "2", "3", "4", "5", "6", "7"))
+Data$Maternal_antenatal_anxiety = as.factor(Data$Maternal_antenatal_anxiety)
+Data$Maternal_antenatal_depression = as.factor(Data$Maternal_antenatal_depression)
+```
+
+## Section II: Demographics of study sample
+
+Check normality of continuous variables to know how to report them (both Shapiro tests and histograms are used to double-check visually).
+
+```{r}
+targetdata=Data[,grep('GA_birth|BW|SIMD|age_scan|Maternal_age', colnames(Data))]
+apply(targetdata,2,shapiro.test)
+
+for (cols in colnames(targetdata)) {
+  targetdata %>% pull(cols) %>% hist(main = cols)
+}
+```
+
+According to above: SIMD, BW, and GA at birth seem non-normally distributed.
+
+Display tables of descriptive statistics: report medians (range) for GA at birth, BW, SIMD and means (SD) for age at scan, according to above.
+
+```{r}
+
+# data wrangling
+
+Data_baseline <- Data[,c(25:37)]
+
+# create table 
+
+table_dem <- tbl_summary(
+  Data_baseline,
+  by = NULL,
+  label = NULL,
+  statistic = list(c("GA_birth", "BW", "SIMD") ~ c("{median} ({min}, {max})"),
+                   c("age_scan", "Maternal_age") ~ c("{mean} ({sd})"), all_categorical() ~ "{n}"),
+  digits = all_continuous()~3,
+  type = NULL,
+  value = NULL,
+  missing = NULL,
+  missing_text = NULL,
+  sort = NULL,
+  percent = NULL,
+  include = everything()
+)
+
+# export table 
+
+table_dem
+table_dem <- as_tibble(table_dem)
+colnames(table_dem) <- c("Characteristic", "Study sample (N=133)")
+write.csv(table_dem, here("results/demographics", "Study.sample.csv"), row.names=FALSE)
+
+```
+
+## Section III: Demographic comparisons between the included (N=133) and excluded (N=159) sample
+
+```{r}
+
+# show stats and p-values with 3 digits
+
+Pval_fun <- function(x) style_pvalue(x, digits = 3)
+Stat_fun <- function(x) style_sigfig(x, digits=3)
+
+```
+
+```{r}
+
+# data reading and wrangling
+
+IDs_all_MRI <- read.csv(here("raw_data", "IDs_all_MRI.csv"), header=T, dec=".",sep=",")
+list_to_exclude <- rownames(Data)
+Data_excluded <- IDs_all_MRI[ !IDs_all_MRI$ID %in% list_to_exclude, ]
+Data_excluded <- as.data.frame(Data_excluded)
+colnames(Data_excluded) <- "ID"
+Covariates$age_scan <- NULL
+Data_excluded <- merge(Data_excluded, Covariates, by="ID")
+rownames(Data_excluded) <- Data_excluded$ID
+Data_excluded$ID <- NULL
+Data_excluded$group <- "excluded"
+Data_included <- Data[c(25:29,31:37)]
+Data_included$group <- "included"
+
+col_order <- c("GA_birth", "BW", "Prematurity", "sex", "Ethnicity", "Maternal_age", "Maternal_education", "Maternal_smoking", "Maternal_alcohol", "Maternal_antenatal_depression", "Maternal_antenatal_anxiety", "SIMD", "group")
+
+Data_excluded <- Data_excluded[,col_order]
+Data_included <- Data_included[,col_order]
+Data_dem_comparison <- rbind(Data_excluded, Data_included)
+
+# create table 
+
+table_com <- Data_dem_comparison %>% tbl_summary(by = group,
+  label = NULL,
+  statistic = list(c("GA_birth", "BW", "SIMD") ~ c("{median} ({min}, {max})"), 
+                   c("Maternal_age") ~ c("{mean} ({sd})"), all_categorical() ~ "{n} ({p}%)"),
+  digits = everything()~3) %>% 
+  add_p(
+  test = list(c("GA_birth", "BW", "SIMD") ~ "wilcox.test",
+                   c("Maternal_age") ~ "t.test", all_categorical() ~ "chisq.test"),
+  pvalue_fun = Pval_fun) %>% 
+  separate_p_footnotes() %>% 
+  modify_header(
+    list(
+      statistic ~ "**t-statistic**",
+      p.value ~ "**p-value**"
+    )
+  ) %>%
+  modify_fmt_fun(
+    list(
+      statistic ~ Stat_fun,
+      p.value ~ Pval_fun
+    ))
+
+
+
+# change format and add effect sizes 
+
+table_com <- as_tibble(table_com)
+colnames(table_com) <- c("Characteristic", "excluded (N=159)", "study sample (N=133)", "t-statistic", "p-value")
+table_com[, 'effect size'] = NA
+
+table_com$"effect size"[which(table_com$Characteristic=="GA_birth")] <- wilcox_effsize(Data_dem_comparison,GA_birth~group)$effsize
+
+table_com$"effect size"[which(table_com$Characteristic=="BW")] <- wilcox_effsize(Data_dem_comparison,BW~group)$effsize
+
+table_com$"effect size"[which(table_com$Characteristic=="Prematurity")] <- cramer_v(Data_dem_comparison$Prematurity, Data_dem_comparison$group)
+
+table_com$"effect size"[which(table_com$Characteristic=="sex")] <- cramer_v(Data_dem_comparison$sex, Data_dem_comparison$group)  
+
+table_com$"effect size"[which(table_com$Characteristic=="Ethnicity")] <- cramer_v(Data_dem_comparison$Ethnicity, Data_dem_comparison$group)
+
+table_com$"effect size"[which(table_com$Characteristic=="Maternal_age")] <- cohens_d(Data_dem_comparison, Maternal_age~group)$effsize
+
+table_com$"effect size"[which(table_com$Characteristic=="Maternal_education")] <- cramer_v(Data_dem_comparison$Maternal_education, Data_dem_comparison$group)  
+
+table_com$"effect size"[which(table_com$Characteristic=="Maternal_smoking")] <- cramer_v(Data_dem_comparison$Maternal_smoking, Data_dem_comparison$group)
+
+table_com$"effect size"[which(table_com$Characteristic=="Maternal_alcohol")] <- cramer_v(Data_dem_comparison$Maternal_alcohol, Data_dem_comparison$group)
+
+table_com$"effect size"[which(table_com$Characteristic=="Maternal_antenatal_depression")] <- cramer_v(Data_dem_comparison$Maternal_antenatal_depression, Data_dem_comparison$group)
+
+table_com$"effect size"[which(table_com$Characteristic=="Maternal_antenatal_anxiety")] <- cramer_v(Data_dem_comparison$Maternal_antenatal_anxiety, Data_dem_comparison$group)
+
+table_com$"effect size"[which(table_com$Characteristic=="SIMD")] <- wilcox_effsize(Data_dem_comparison,SIMD~group)$effsize
+
+# export table
+write.csv(table_com, here("results/demographics", "Exc.inc.comparison.csv"), row.names=FALSE)
+
+```
+
+## Section IV: Correlations between attachment behaviours (raw scores)
+
+Check distribution of attachment behaviours
+
+```{r}
+targetdata=Data[,grep('_Raw', colnames(Data))]
+apply(targetdata,2,shapiro.test)
+
+for (cols in colnames(targetdata)) {
+  targetdata %>% pull(cols) %>% hist(main = cols)
+}
+
+
+for (cols in colnames(targetdata)) {
+  targetdata %>% pull(cols) %>% qqnorm(main = cols)
+}
+```
+
+FNF_Raw seem non-normally distributed.
+Run correlations (Spearman tests for FNF_Raw).
+
+```{r}
+
+# spearman correlations
+
+targetdata=Data[,grep("_Raw", colnames(Data))]
+
+cors <- function(df) { 
+  # turn all three matrices (r, n, and P into a data frame)
+  M <- Hmisc::rcorr(as.matrix(df), type="spearman")
+  # return the three data frames in a list return(Mdf)
+  Mdf <- map(M, ~data.frame(.x))
+}
+
+newdata <- cors(targetdata)
+
+formatted_cors <- function(df){
+  cors(df) %>%
+    map(~rownames_to_column(.x, var="measure1")) %>%
+    map(~pivot_longer(.x, -measure1, names_to="measure2")) %>% 
+    bind_rows(.id = "id") %>%
+    tidyr::pivot_wider(names_from = id, values_from = value) %>%
+    mutate(sig_label = case_when(
+      P<0.05 & P>0.01 ~ "*", 
+      P<0.01 & P>0.001 ~ "**", 
+      P<0.001 ~ "***",
+      TRUE ~ " "))}
+
+data_spearman <- formatted_cors(targetdata)
+data_spearman = as.data.frame(data_spearman)
+colnames(data_spearman) = c("Y", "X", "Estimate", "N", "P_value", "sig_label")
+data_FNF <- data_spearman %>% filter(Y == "FNF_Raw")
+data_FNF <- data_FNF %>% filter(X == "HD_Raw" | X == "FNF_Raw" |  X == "AA_Raw" )
+
+# pearson correlations
+
+targetdata=Data[,grep("HD_Raw|AA_Raw", colnames(Data))]
+
+cors <- function(df) { 
+  # turn all three matrices (r, n, and P into a data frame)
+  M <- Hmisc::rcorr(as.matrix(df), type="pearson")
+  # return the three data frames in a list return(Mdf)
+  Mdf <- map(M, ~data.frame(.x))
+}
+
+formatted_cors <- function(df){
+  cors(df) %>%
+    map(~rownames_to_column(.x, var="measure1")) %>%
+    map(~pivot_longer(.x, -measure1, names_to="measure2")) %>% 
+    bind_rows(.id = "id") %>%
+    pivot_wider(names_from = id, values_from = value) %>%
+    mutate(sig_label = case_when(
+      P<0.05 & P>0.01 ~ "*", 
+      P<0.01 & P>0.001 ~ "**", 
+      P<0.001 ~ "***",
+      TRUE ~ " "))}
+
+data_pearson <- formatted_cors(targetdata)
+data_pearson = as.data.frame(data_pearson)
+colnames(data_pearson) = c("Y", "X", "Estimate", "N", "P_value", "sig_label")
+
+# data wrangling 
+
+data_HD <- data_pearson %>% filter(Y == "HD_Raw"| Y == "AA_Raw")
+data_HD <- data_HD %>% filter(X == "HD_Raw" )
+
+data_AA <- data_pearson %>% filter(Y == "AA_Raw")
+data_AA <- data_AA %>% filter(X == "AA_Raw")
+
+data <- rbind(data_FNF, data_HD, data_AA)
+
+data$X <- factor(data$X, levels=c("HD_Raw", "FNF_Raw", "AA_Raw"))
+data$Y <- factor(data$Y, levels=c("AA_Raw", "FNF_Raw", "HD_Raw"))
+data <- data %>% mutate_if(is.numeric, ~round(., 2))
+data[3,2] <- "FNF_Raw"
+data[3,1] <- "AA_Raw"
+
+# create and save heatmap from correlations
+
+g <- ggplot(data = data, aes(x = X, y = Y, fill = Estimate)) +
+  scale_fill_gradient2(mid="#FBFEF9",low="#841026",high="#0E6885", limits=c(-1,1)) +
+  geom_tile() +
+  ylab(label = "Attachment behaviour") +
+  xlab(label = "Attachment behaviour") 
+
+
+g <- g + geom_text(aes(label=Estimate), vjust=0.6, hjust=0.5) + theme_bw()
+
+g
+
+ggsave(here("results/figures", "Beh.cor.heatmap.pdf"), width = 130, height = 100, units = "mm", plot = g, dpi=300)
+
+```
+
+```{r}
+markdownToHTML("MRI_Attachment_dem.Rmd",output ="MRI_Attachment_dem.html")
+```
+

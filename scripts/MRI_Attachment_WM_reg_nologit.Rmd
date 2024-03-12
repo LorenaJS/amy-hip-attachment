@@ -1,0 +1,284 @@
+---
+title: "MRI Attachment - Regression analyses for Amy/Hip structural connectivity and attachment behaviours (untransformed behavioural data)"
+author: "LJS"
+date: "2023-02-28"
+output: html_document
+fig_height: 10
+---
+
+# Libraries 
+
+```{r setup, include=FALSE}
+library("rlang") #toolbox
+library("vctrs") #data manipulation
+library("dplyr") #data manipulation
+library("ggplot2") #plotting
+library("scales") #plotting
+library("here") #toolbox
+library("tidyverse") #data manipulation
+library("corrplot") #plotting
+library("ggpubr") #plotting
+library("tidytext") #data manipulation
+library("rstatix") #statistical tests
+library("OpenMx") #residualise metrics
+library("umx") #residualise metrics
+library("knitr") #rmarkdown
+library("htmltools") #rmarkdown
+library("markdown") #rmarkdown
+library("httpuv") #rmarkdown
+library("NCmisc") #toolbox
+library("performance") #check models performance
+library("easystats") #check models performance
+library("see") #check models performance
+```
+
+# Neonatal MRI and infant attachment
+
+## Section I: Prepare dataframe with data and transform potential covariates
+
+Start from spreadsheet with raw times from coding scheme (Williams and Turner, 2020). 
+IDs are already filtered in this spreadhseet, based on MRI + attachment criteria. 
+Merge attachment, MRI and covariates data in a dataframe.
+
+### Create spreadsheet for all statistical analyses
+
+```{r}
+Attachment <- read.csv(here("raw_data", "IDs_WT_rawtimes_filtered.csv"), header=T, dec=".",sep=",")
+MRI_DTI <- read.csv(here("raw_data", "IDs_MRI_structural_connectivity.csv"), header=T, dec=".",sep=",")
+Covariates <- read.csv(here("raw_data", "IDs_covariates.csv"), header=T, dec=".",sep=",")
+Data <- merge(Attachment, MRI_DTI, by="ID")
+Data <- merge(Data, Covariates, by="ID")
+rownames(Data)<-Data$ID
+Data$ID <- NULL
+```
+
+Avoid scientific notation.
+
+```{r}
+options(scipen = 999)
+```
+
+Transform variables to categorical nominal (factors without order) or categorical ordinal (factors with order) accordingly.
+
+```{r}
+Data$sex = as.factor(Data$sex)
+Data$Maternal_smoking = as.factor(Data$Maternal_smoking)
+Data$Maternal_alcohol = as.factor(Data$Maternal_alcohol)
+Data$Maternal_education = factor(Data$Maternal_education, order = TRUE, levels =c("1", "2", "3", "4", "5", "6", "7"))
+Data$Maternal_antenatal_anxiety = as.factor(Data$Maternal_antenatal_anxiety)
+Data$Maternal_antenatal_depression = as.factor(Data$Maternal_antenatal_depression)
+```
+
+Scale data and residualise brain against age at scan (these keep their original name for simplicity).
+
+```{r}
+Data[,c(1:19)] <- scale(Data[,c(1:19)])
+
+Data <- umx_residualize(c("FA_hip_l", "FA_hip_r", "FA_amy_l", "FA_amy_r", "MD_hip_l", "MD_hip_r", "MD_amy_l", "MD_amy_r", "NDI_hip_l", "NDI_hip_r", "NDI_amy_l", "NDI_amy_r", "ODI_hip_l", "ODI_hip_r", "ODI_amy_l", "ODI_amy_r"), cov = c("age_scan"), data = Data)
+```
+
+## Section II: Associations between MRI features and attachment behaviours
+
+Run models for MRI metrics as independent variables, and HD/FNF and AA raw scores as dependent variables.
+Set variables for loops.
+
+```{r}
+targetdata=Data
+colns_oi = colnames(Data)[grep('_hip|_amy',colnames(targetdata))]
+```
+
+### Brain data ~ HD Raw score
+
+Run models and create table with results.
+
+```{r}
+for(i in colns_oi){
+  formula.torun = paste0('HD_Raw~', i)
+  fit=lm(as.formula(formula.torun),data=targetdata) 
+  report=summary(fit)
+  single.model=report$coefficients[nrow(report$coefficients),]
+  
+  if (i==colns_oi[1]){
+    total.report=single.model
+  }else{
+    total.report=rbind(total.report,single.model)
+  }
+  
+}
+
+rownames(total.report)=colns_oi
+Total.report.HD = data.frame(total.report)
+colnames(Total.report.HD) <- c("Beta", "SE", "t-value", "p-value")
+Total.report.HD$Brain <- rownames(Total.report.HD)
+rownames(Total.report.HD) <- NULL
+Total.report.HD$Behaviour = "HD_Raw"
+new_order = c("Brain","Behaviour","Beta", "SE", "t-value", "p-value")
+Total.report.HD <- Total.report.HD[, new_order]
+Results.report <- Total.report.HD
+```
+
+#### Model diagnostics for Brain data ~ HD Raw score
+
+```{r, fig.fullheight=TRUE}
+model_list=list()
+for(i in colns_oi){
+  formula.torun = paste0('HD_Raw~', i)
+  fit=lm(as.formula(formula.torun),data=targetdata)
+  model_list[[i]]=fit}
+
+lapply(model_list, check_model)
+
+#Double-check normality of residuals with Q-Q plots
+for (i in model_list) {
+  plot(i, which=2)}
+```
+
+According to above, models do not show issues with linearity of the association, normality of residuals, homogeneity of variance or multicollinearity of predictor variables. 
+
+### Brain data ~ FNF Raw score
+
+Run models and create table with results.
+
+```{r}
+for(i in colns_oi){
+  formula.torun = paste0('FNF_Raw~', i)
+  fit=lm(as.formula(formula.torun),data=targetdata) 
+  report=summary(fit)
+  single.model=report$coefficients[nrow(report$coefficients),]
+  
+  if (i==colns_oi[1]){
+    total.report=single.model
+  }else{
+    total.report=rbind(total.report,single.model)
+  }
+  
+}
+
+rownames(total.report)=colns_oi
+Total.report.FNF = data.frame(total.report)
+colnames(Total.report.FNF) <- c("Beta", "SE", "t-value", "p-value")
+Total.report.FNF$Brain <- rownames(Total.report.FNF)
+rownames(Total.report.FNF) <- NULL
+Total.report.FNF$Behaviour = "FNF_Raw"
+new_order = c("Brain","Behaviour","Beta", "SE", "t-value", "p-value")
+Total.report.FNF <- Total.report.FNF[, new_order]
+Results.report <- rbind (Results.report, Total.report.FNF)
+```
+
+#### Model diagnostics for Brain data ~ FNF Raw score
+
+```{r, fig.fullheight=TRUE}
+model_list=list()
+for(i in colns_oi){
+  formula.torun = paste0('FNF_Raw~', i)
+  fit=lm(as.formula(formula.torun),data=targetdata)
+  model_list[[i]]=fit}
+
+lapply(model_list, check_model)
+
+#Double-check normality of residuals with Q-Q plots
+for (i in model_list) {
+  plot(i, which=2)}
+```
+
+According to above, models show issues with linearity of the association, normality of residuals, and homogeneity of variance. 
+
+### Brain data ~ AA Raw score
+
+Run models and create table with results.
+
+```{r}
+for(i in colns_oi){
+  formula.torun = paste0('AA_Raw~', i)
+  fit=lm(as.formula(formula.torun),data=targetdata) 
+  report=summary(fit)
+  single.model=report$coefficients[nrow(report$coefficients),]
+  
+  if (i==colns_oi[1]){
+    total.report=single.model
+  }else{
+    total.report=rbind(total.report,single.model)
+  }
+  
+}
+
+rownames(total.report)=colns_oi
+Total.report.AA = data.frame(total.report)
+colnames(Total.report.AA) <- c("Beta", "SE", "t-value", "p-value")
+Total.report.AA$Brain <- rownames(Total.report.AA)
+rownames(Total.report.AA) <- NULL
+Total.report.AA$Behaviour = "AA_Raw"
+new_order = c("Brain","Behaviour","Beta", "SE", "t-value", "p-value")
+Total.report.AA <- Total.report.AA[, new_order]
+Results.report <- rbind (Results.report, Total.report.AA)
+```
+
+#### Model diagnostics for Brain data ~ AA Raw score
+
+```{r, fig.fullheight=TRUE}
+model_list=list()
+for(i in colns_oi){
+  formula.torun = paste0('AA_Raw~', i)
+  fit=lm(as.formula(formula.torun),data=targetdata)
+  model_list[[i]]=fit}
+
+lapply(model_list, check_model)
+
+#Double-check normality of residuals with Q-Q plots
+for (i in model_list) {
+  plot(i, which=2)}
+```
+
+According to above, models do not show issues with linearity of the association, normality of residuals, homogeneity of variance or multicollinearity of predictor variables. 
+
+### create total reports and adjust p-values
+
+```{r}
+Results.report.hip.l <- filter(Results.report,grepl("hip_l",Brain))
+Results.report.hip.l$"p-corrected"=p.adjust(Results.report.hip.l[,'p-value'],method='BH')
+
+Results.report.hip.r <- filter(Results.report,grepl("hip_r",Brain))
+Results.report.hip.r$"p-corrected"=p.adjust(Results.report.hip.r[,'p-value'],method='BH')
+
+Results.report.amy.l <- filter(Results.report,grepl("amy_l",Brain))
+Results.report.amy.l$"p-corrected"=p.adjust(Results.report.amy.l[,'p-value'],method='BH')
+
+Results.report.amy.r <- filter(Results.report,grepl("amy_r",Brain))
+Results.report.amy.r$"p-corrected"=p.adjust(Results.report.amy.r[,'p-value'],method='BH')
+
+Total.report = rbind(Results.report.hip.l, Results.report.hip.r, Results.report.amy.l, Results.report.amy.r)
+Total.report$siglabel <- NA
+Total.report$siglabel[Total.report$"p-corrected"<0.05] = "*"
+Total.report$siglabel[Total.report$"p-corrected"<0.01] = "**"
+Total.report$siglabel[Total.report$"p-corrected"<0.005] = "***"
+  
+write.csv(Total.report, here("results/regression", "WM.reg.nologit.csv"), row.names = FALSE)
+```
+
+### Plot associations between MRI features and attachment behaviours
+
+```{r, fig.fullheight=TRUE}
+data <- read.csv(here("results/regression", "WM.reg.nologit.csv"), header=T, dec=".",sep=",")
+
+data$Brain <- factor(data$Brain, levels=c("FA_amy_l", "MD_amy_l", "NDI_amy_l", "ODI_amy_l",
+                                  "FA_amy_r", "MD_amy_r", "NDI_amy_r", "ODI_amy_r",
+                                  "FA_hip_l", "MD_hip_l", "NDI_hip_l", "ODI_hip_l",
+                                  "FA_hip_r", "MD_hip_r", "NDI_hip_r", "ODI_hip_r", 
+                                  "HD_Raw", "FNF_Raw", "AA_Raw"))
+g <- ggplot(data = data, mapping = aes(x=Brain, y = Behaviour, fill = Beta)) +
+  scale_fill_gradient2(mid="#FBFEF9",low="#841026",high="#0E6885", limits=c(-0.5,0.5)) +
+  geom_tile() +
+  scale_y_reordered() +
+  ylab(label = "Attachment dimension") 
+
+g <- g + geom_text(aes(label=siglabel), vjust=0.6, hjust=0.5) + theme_bw()
+
+g
+
+ggsave(here("results/figures", "WM.reg.nologit.heatmap.pdf"), plot = g, dpi=300)
+```
+
+```{r}
+markdownToHTML("MRI_Attachment_WM_reg_nologit.Rmd",output ="MRI_Attachment_WM_reg_nologit.html")
+```
+

@@ -1,0 +1,190 @@
+---
+title: "Interater reliability analyses"
+author: "LJS"
+date: "2024-03-11"
+output: html_document
+---
+
+# Libraries 
+
+```{r}
+library("irr") #reliability analyses
+library("knitr") #rmarkdown
+library("htmltools") #rmarkdown
+library("markdown") #rmarkdown
+library("httpuv") #rmarkdown
+```
+
+# Neonatal MRI and infant attachment
+
+## Section I: Prepare dataframe with data
+
+Start from spreadsheet with raw scores and attachment styles (Williams and Turner, 2020) from first and second coder. 
+
+### Create spreadsheet
+
+```{r}
+Data <- read.csv(here("raw_data", "IDs_WT_inter.csv"), header=T, dec=".",sep=",")
+```
+
+## Create table to add results
+
+```{r}
+results_table <- data.frame(matrix(ncol = 6, nrow = 4))
+x <- c("measure", "ICC/Kappa", "lbound", "ubound", "%agreement", "pval")
+colnames(results_table) <- x
+results_table$measure <- c("HD_Raw", "FNF_Raw", "AA_Raw", "AttachmentStyle")
+```
+
+## Section II: Calculate ICC for raw scores
+
+### HD Raw scores
+
+```{r}
+
+# data wrangling
+
+Data_HD <- Data[,c(1:3)]
+Data_HD_1 <- Data_HD[Data_HD$Rater=="1",]
+Data_HD_1$Rater <- NULL
+colnames(Data_HD_1) <- c("ID", "1")
+Data_HD_2 <- Data_HD[Data_HD$Rater=="2",]
+Data_HD_2$Rater <- NULL
+colnames(Data_HD_2) <- c("ID", "2")
+
+Data_HD <- merge(Data_HD_1, Data_HD_2, by="ID")
+
+rownames(Data_HD) <- Data_HD$ID
+Data_HD$ID <- NULL
+
+# calculate ICC
+
+ICC_HD <- icc(
+  Data_HD, model = "twoway", 
+  type = "agreement", unit = "single"
+)
+
+# write into the results table
+
+results_table$"ICC/Kappa"[which(results_table$measure=="HD_Raw")] <- ICC_HD$value
+results_table$lbound[which(results_table$measure=="HD_Raw")] <- ICC_HD$lbound
+results_table$ubound[which(results_table$measure=="HD_Raw")] <- ICC_HD$ubound
+results_table$pval[which(results_table$measure=="HD_Raw")] <- ICC_HD$p.value
+
+```
+
+### FNF Raw scores
+
+```{r}
+
+# data wrangling
+
+Data_FNF <- Data[,c(1,2,4)]
+Data_FNF_1 <- Data_FNF[Data_FNF$Rater=="1",]
+Data_FNF_1$Rater <- NULL
+colnames(Data_FNF_1) <- c("ID", "1")
+Data_FNF_2 <- Data_FNF[Data_FNF$Rater=="2",]
+Data_FNF_2$Rater <- NULL
+colnames(Data_FNF_2) <- c("ID", "2")
+
+Data_FNF <- merge(Data_FNF_1, Data_FNF_2, by="ID")
+
+rownames(Data_FNF) <- Data_FNF$ID
+Data_FNF$ID <- NULL
+
+# calculate ICC
+
+ICC_FNF <- icc(
+  Data_FNF, model = "twoway", 
+  type = "agreement", unit = "single"
+)
+
+# write into the results table
+
+results_table$"ICC/Kappa"[which(results_table$measure=="FNF_Raw")] <- ICC_FNF$value
+results_table$lbound[which(results_table$measure=="FNF_Raw")] <- ICC_FNF$lbound
+results_table$ubound[which(results_table$measure=="FNF_Raw")] <- ICC_FNF$ubound
+results_table$pval[which(results_table$measure=="FNF_Raw")] <- ICC_FNF$p.value
+
+```
+
+### AA Raw scores
+
+```{r}
+
+# data wrangling
+
+Data_AA <- Data[,c(1,2,5)]
+Data_AA_1 <- Data_AA[Data_AA$Rater=="1",]
+Data_AA_1$Rater <- NULL
+colnames(Data_AA_1) <- c("ID", "1")
+Data_AA_2 <- Data_AA[Data_AA$Rater=="2",]
+Data_AA_2$Rater <- NULL
+colnames(Data_AA_2) <- c("ID", "2")
+
+Data_AA <- merge(Data_AA_1, Data_AA_2, by="ID")
+
+rownames(Data_AA) <- Data_AA$ID
+Data_AA$ID <- NULL
+
+# calculate ICC
+
+ICC_AA <- icc(
+  Data_AA, model = "twoway", 
+  type = "agreement", unit = "single"
+)
+
+# write into the results table
+
+results_table$"ICC/Kappa"[which(results_table$measure=="AA_Raw")] <- ICC_AA$value
+results_table$lbound[which(results_table$measure=="AA_Raw")] <- ICC_AA$lbound
+results_table$ubound[which(results_table$measure=="AA_Raw")] <- ICC_AA$ubound
+results_table$pval[which(results_table$measure=="AA_Raw")] <- ICC_AA$p.value
+
+```
+
+## Section III: Calculate Kappa for attachment styles
+
+```{r}
+
+# data wrangling
+
+Data_AttachmentStyles <- Data[,c(1,2,6)]
+Data_AttachmentStyles_1 <- Data_AttachmentStyles[Data_AttachmentStyles$Rater=="1",]
+Data_AttachmentStyles_1$Rater <- NULL
+colnames(Data_AttachmentStyles_1) <- c("ID", "1")
+Data_AttachmentStyles_2 <- Data_AttachmentStyles[Data_AttachmentStyles$Rater=="2",]
+Data_AttachmentStyles_2$Rater <- NULL
+colnames(Data_AttachmentStyles_2) <- c("ID", "2")
+
+Data_AttachmentStyles <- merge(Data_AttachmentStyles_1, Data_AttachmentStyles_2, by="ID")
+
+rownames(Data_AttachmentStyles) <- Data_AttachmentStyles$ID
+Data_AttachmentStyles$ID <- NULL
+
+# calculate percentage of agreement
+
+Agree_AttachmentStyles <- agree(Data_AttachmentStyles, tolerance=0)
+
+# calculate kappa
+
+Kappa_AttachmentStyles <- kappa2(Data_AttachmentStyles)
+
+# write into the results table
+
+results_table$"ICC/Kappa"[which(results_table$measure=="AttachmentStyle")] <- Kappa_AttachmentStyles$value
+results_table$"%agreement"[which(results_table$measure=="AttachmentStyle")] <- Agree_AttachmentStyles$value
+results_table$pval[which(results_table$measure=="AttachmentStyle")] <- Kappa_AttachmentStyles$p.value
+
+```
+
+## Section IV: save results
+
+```{r}
+write.csv(results_table, here("results/reliability", "WT_inter_rel.csv"), row.names = FALSE)
+```
+
+```{r}
+markdownToHTML("MRI_Attachment_inter_rel.Rmd",output ="MRI_Attachment_inter_rel.html")
+```
+
